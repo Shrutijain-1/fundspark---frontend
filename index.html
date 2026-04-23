@@ -1,0 +1,400 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="UTF-8" />
+  <title>FundSpark Pro</title>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Segoe UI;
+      background: #0b0820;
+      color: white;
+    }
+
+    nav {
+      display: flex;
+      justify-content: space-between;
+      padding: 15px 30px;
+      background: #140a30;
+      align-items: center;
+    }
+
+    .btn {
+      padding: 8px 15px;
+      border: none;
+      border-radius: 20px;
+      cursor: pointer;
+      background: linear-gradient(45deg, #ff00cc, #00ffd5);
+      color: white;
+      margin-top: 10px;
+    }
+
+    .container {
+      padding: 20px;
+    }
+
+    input,
+    select {
+      width: 100%;
+      padding: 10px;
+      margin: 5px 0;
+      border-radius: 10px;
+      border: none;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 20px;
+    }
+
+    .card {
+      background: #140a30;
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .card img {
+      width: 100%;
+      height: 150px;
+      object-fit: cover;
+    }
+
+    .card-body {
+      padding: 10px;
+    }
+
+    .progress {
+      height: 6px;
+      background: #333;
+      border-radius: 10px;
+    }
+
+    .progress span {
+      display: block;
+      height: 100%;
+      background: linear-gradient(45deg, #ff00cc, #00ffd5);
+    }
+
+    /* DELETE BUTTON */
+    .delete-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: red;
+      border: none;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      color: white;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .modal {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #140a30;
+      padding: 20px;
+      border-radius: 10px;
+      display: none;
+    }
+
+    .admin {
+      background: #1a133a;
+      padding: 15px;
+      margin-top: 20px;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+
+<body>
+  <nav>
+    <h2>⚡ FundSpark</h2>
+    <div id="userArea"></div>
+  </nav>
+
+  <div class="container">
+    <h2>Create Campaign</h2>
+
+    <input id="title" placeholder="Title" />
+    <input id="goal" type="number" placeholder="Goal ₹" />
+    <input id="img" placeholder="Image URL" />
+
+    <h3>🧠 AI Generator</h3>
+    <input id="idea" placeholder="Enter idea" />
+
+    <select id="style">
+      <option value="professional">Professional</option>
+      <option value="startup">Startup</option>
+    </select>
+
+    <button class="btn" onclick="generateAI()">Generate AI</button>
+
+    <p id="aiText"></p>
+
+    <button class="btn" onclick="createCampaign()">Create Campaign</button>
+
+    <h2>Campaigns</h2>
+    <div class="grid" id="grid"></div>
+
+    <div class="admin" id="adminPanel" style="display: none">
+      <h2>🛠️ Admin Dashboard</h2>
+      <p>Total Campaigns: <span id="totalCampaigns"></span></p>
+      <p>Total Funds Raised: ₹<span id="totalFunds"></span></p>
+    </div>
+  </div>
+
+  <!-- LOGIN -->
+  <div class="modal" id="loginModal">
+    <h3>Login</h3>
+    <input id="name" placeholder="Name" />
+    <button onclick="login()" class="btn">Login</button>
+  </div>
+
+  <!-- PAYMENT -->
+  <div class="modal" id="payModal">
+    <h3>💳 Payment</h3>
+    <input id="payAmt" type="number" placeholder="Amount" />
+    <button onclick="confirmPayment()" class="btn">Pay</button>
+  </div>
+
+  <script>
+
+    const API_URL = 'https://fundspark-backend-6n78.onrender.com/api';
+    let campaigns = [];
+    let currentFundIndex = null;
+
+    function getHeaders() {
+      return {
+        'Content-Type': 'application/json'
+      };
+    }
+
+    async function fetchCampaigns() {
+      try {
+        const res = await fetch(`${API_URL}/campaigns`);
+        campaigns = await res.json();
+        render();
+      } catch (err) {
+        console.error('Error fetching campaigns', err);
+      }
+    }
+
+    function render() {
+      let grid = document.getElementById("grid");
+
+      grid.innerHTML = campaigns.map((c, i) => {
+        let percent = c.goal ? Math.min(100, (c.raised / c.goal) * 100) : 0;
+
+        return `
+          <div class="card">
+
+            ${percent === 100
+            ? `<button class="delete-btn" onclick="deleteCampaign('${c._id}')">✖</button>`
+            : ""}
+
+            <img src="${c.img || 'https://images.unsplash.com/photo-1556740749-887f6717d7e4?w=800'}">
+
+            <div class="card-body">
+              <h3>${c.title}</h3>
+              <p>${c.desc}</p>
+
+              <div class="progress">
+                <span style="width:${percent}%"></span>
+              </div>
+
+              <p>₹${c.raised} / ₹${c.goal}</p>
+
+              <button class="btn" onclick="openPayment(${i})">Fund</button>
+            </div>
+          </div>`;
+      }).join("");
+
+      updateAdmin();
+    }
+
+    /* DELETE */
+    async function deleteCampaign(id) {
+      if (confirm("Delete this completed campaign?")) {
+        try {
+          const res = await fetch(`${API_URL}/campaigns/${id}`, {
+            method: 'DELETE',
+            headers: getHeaders()
+          });
+          if (!res.ok) throw new Error(await res.text());
+          fetchCampaigns();
+        } catch (err) {
+          alert("Error: " + err.message);
+        }
+      }
+    }
+
+    /* AI */
+    function generateAI() {
+      let idea = document.getElementById("idea").value;
+      let style = document.getElementById("style").value;
+
+      if (!idea) {
+        alert("Enter idea");
+        return;
+      }
+
+      let text = style === "professional"
+        ? "🚀 " + idea + " is a structured project designed for meaningful impact."
+        : "🔥 " + idea + " is a high-growth startup idea with huge potential!";
+
+      document.getElementById("aiText").innerText = text;
+    }
+
+    /* CREATE */
+    async function createCampaign() {
+      let title = document.getElementById("title").value;
+      let goal = document.getElementById("goal").value;
+      let img = document.getElementById("img").value;
+      let desc = document.getElementById("aiText").innerText;
+
+      if (!title || !goal) {
+        alert("Fill all fields");
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_URL}/campaigns`, {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify({ title, goal, img, desc: desc || "No description" })
+        });
+
+        if (!res.ok) {
+          if (res.status === 401) return alert("Please login first to create campaign");
+          throw new Error(await res.text());
+        }
+
+        fetchCampaigns();
+
+        document.getElementById("title").value = "";
+        document.getElementById("goal").value = "";
+        document.getElementById("img").value = "";
+        document.getElementById("aiText").innerText = "";
+      } catch (err) {
+        alert("Error: " + err);
+      }
+    }
+
+    /* PAYMENT */
+    function openPayment(i) {
+      currentFundIndex = i;
+      document.getElementById("payModal").style.display = "block";
+    }
+
+    async function confirmPayment() {
+      let amt = document.getElementById("payAmt").value;
+
+      if (!amt || amt <= 0) {
+        alert("Enter valid amount");
+        return;
+      }
+
+      let campaign = campaigns[currentFundIndex];
+      if (!campaign) return;
+
+      try {
+        const res = await fetch(`${API_URL}/campaigns/${campaign._id}/fund`, {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify({ amount: Number(amt) })
+        });
+
+        if (!res.ok) {
+          if (res.status === 401) return alert("Please login first to fund a campaign");
+          throw new Error(await res.text());
+        }
+
+        fetchCampaigns();
+
+        document.getElementById("payModal").style.display = "none";
+        document.getElementById("payAmt").value = "";
+      } catch (err) {
+        alert("Error: " + err);
+      }
+    }
+
+    /* LOGIN */
+    function openLogin() {
+      document.getElementById("loginModal").style.display = "block";
+    }
+
+    async function login() {
+      let name = document.getElementById("name").value;
+
+      if (!name) {
+        alert("Enter name");
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_URL}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name })
+        });
+
+        if (!res.ok) {
+          throw new Error("Login failed");
+        }
+
+        const data = await res.json();
+        localStorage.setItem("user", data.name);
+        location.reload();
+      } catch (err) {
+        if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
+          alert("Backend connection failed. Please make sure the server is running.");
+        } else {
+          alert(err.message);
+        }
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem("user");
+      location.reload();
+    }
+
+    function renderUser() {
+      let user = localStorage.getItem("user");
+
+      if (user) {
+        document.getElementById("userArea").innerHTML = `
+            <span>👋 ${user}</span>
+            <button class="btn" onclick="logout()">Logout</button>
+          `;
+
+        if (user.toLowerCase() === "admin") {
+          document.getElementById("adminPanel").style.display = "block";
+        }
+      } else {
+        document.getElementById("userArea").innerHTML = `
+            <button class="btn" onclick="openLogin()">Login</button>
+          `;
+      }
+    }
+
+    function updateAdmin() {
+      document.getElementById("totalCampaigns").innerText = campaigns.length;
+      let total = campaigns.reduce((sum, c) => sum + c.raised, 0);
+      document.getElementById("totalFunds").innerText = total;
+    }
+
+    fetchCampaigns();
+    renderUser();
+  </script>
+</body>
+
+</html>
